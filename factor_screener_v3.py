@@ -148,23 +148,13 @@ c5.metric("平均市值",  f"${filtered['市值($B)'].mean():.0f}B" if not filte
 if filtered.empty:
     st.warning("没有符合条件的股票，请放宽筛选条件。")
 else:
-    fmt = {
-        "P/E":        "{:.1f}",
-        "P/B":        "{:.2f}",
-        "ROE (%)":    "{:.1f}%",
-        "市值($B)":   "${:.0f}B",
-        "52W涨幅(%)": "{:.1f}%",
-    }
-    styled = (filtered.style
-              .background_gradient(subset=["P/B"], cmap="RdYlGn_r")
-              .background_gradient(subset=["P/E"], cmap="RdYlGn_r")
-              .format(fmt, na_rep="N/A"))
-    if filtered["ROE (%)"].notna().any():
-        styled = styled.background_gradient(subset=["ROE (%)"], cmap="RdYlGn")
-    if filtered["52W涨幅(%)"].notna().any():
-        styled = styled.background_gradient(subset=["52W涨幅(%)"], cmap="RdYlGn")
-
-    st.dataframe(styled, use_container_width=True, height=450)
+    display_df = filtered.copy()
+    for col, fmt in [("P/E", "{:.1f}"), ("P/B", "{:.2f}"), ("ROE (%)", "{:.1f}%"),
+                     ("市值($B)", "${:.0f}B"), ("52W涨幅(%)", "{:.1f}%")]:
+        display_df[col] = display_df[col].apply(
+            lambda x: fmt.format(x) if pd.notna(x) else "N/A"
+        )
+    st.dataframe(display_df, use_container_width=True, height=450)
 
     tab1, tab2, tab3 = st.tabs(["📉 P/B 对比", "📈 ROE 对比", "🚀 52W涨幅"])
     with tab1:
