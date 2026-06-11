@@ -150,7 +150,7 @@ if filtered.empty:
 else:
     display_df = filtered.copy()
     for col, fmt in [("P/E", "{:.1f}"), ("P/B", "{:.2f}"), ("ROE (%)", "{:.1f}%"),
-                     ("市值($B)", "${:.0f}B"), ("52W涨幅(%)", "{:.1f}%")]:
+                    ("市值($B)", "${:.0f}B"), ("52W涨幅(%)", "{:.1f}%")]:
         display_df[col] = display_df[col].apply(
             lambda x: fmt.format(x) if pd.notna(x) else "N/A"
         )
