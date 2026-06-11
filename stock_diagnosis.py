@@ -7,6 +7,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import urllib.request
+import plotly.graph_objects as go
 import xml.etree.ElementTree as ET
 from datetime import datetime, date, timedelta
 
@@ -179,6 +180,34 @@ def compute_diagnosis(hist_full, hist_1y, fast, fin, bs, buy_price, buy_date):
     result["total_score"] = total
     result["hist_full"]   = hist_full
 
+    # ── 6. ATR止损位 + 目标价 ─────────────────────────────────────────────────
+    try:
+        atr_df = hist_1y.tail(14).copy()
+        atr_df["H-L"]  = atr_df["High"] - atr_df["Low"]
+        atr_df["H-PC"] = abs(atr_df["High"]  - atr_df["Close"].shift(1))
+        atr_df["L-PC"] = abs(atr_df["Low"]   - atr_df["Close"].shift(1))
+        atr_df["TR"]   = atr_df[["H-L","H-PC","L-PC"]].max(axis=1)
+        atr = atr_df["TR"].mean()
+
+        stop_loss  = round(current_price - 2 * atr, 2)
+        target     = round(current_price + 3 * atr, 2)
+        stop_pct   = (stop_loss  - current_price) / current_price * 100
+        target_pct = (target     - current_price) / current_price * 100
+        stop_from_buy   = (stop_loss - buy_price) / buy_price * 100
+        target_from_buy = (target    - buy_price) / buy_price * 100
+
+        result["atr"] = {
+            "atr":             round(atr, 2),
+            "stop_loss":       stop_loss,
+            "target":          target,
+            "stop_pct":        stop_pct,
+            "target_pct":      target_pct,
+            "stop_from_buy":   stop_from_buy,
+            "target_from_buy": target_from_buy,
+        }
+    except Exception:
+        result["atr"] = None
+
     return result
 
 # ── 主逻辑 ─────────────────────────────────────────────────────────────────────
@@ -232,14 +261,128 @@ if diagnose_btn and ticker_input:
                     st.markdown(diag["fundamental"]["label"])
                     st.caption(diag["fundamental"]["msg"])
 
-                # ── 价格走势图（从买入日期开始） ──────────────────────────────
+                # ── ATR 止损位 + 目标价 ───────────────────────────────────────
+                st.divider()
+                st.subheader("🎯 止损位 & 目标价（基于ATR波动率）")
+                st.caption("根据过去14天的平均真实波动幅度（ATR）计算，超出正常波动范围的参考价位")
+
+                if diag["atr"]:
+                    atr_data = diag["atr"]
+                    ca, cb, cc = st.columns(3)
+                    ca.metric(
+                        "🛑 止损位",
+                        f"{atr_data['stop_loss']:.2f}",
+                        f"{atr_data['stop_pct']:+.1f}% 当前价  /  {atr_data['stop_from_buy']:+.1f}% 买入价",
+                        delta_color="inverse"
+                    )
+                    cb.metric(
+                        "📍 当前价",
+                        f"{current:.2f}",
+                        f"ATR = {atr_data['atr']:.2f}"
+                    )
+                    cc.metric(
+                        "🎯 目标价",
+                        f"{atr_data['target']:.2f}",
+                        f"{atr_data['target_pct']:+.1f}% 当前价  /  {atr_data['target_from_buy']:+.1f}% 买入价"
+                    )
+                    st.caption(f"风险回报比 1 : 1.5 ｜ 止损 = 当前价 − 2×ATR，目标 = 当前价 + 3×ATR")
+                else:
+                    st.info("ATR数据不足，无法计算止损位和目标价")
+
+                # ── K线图（Plotly，锁定range） ────────────────────────────────
                 st.divider()
                 st.subheader(f"📈 价格走势（从买入日 {buy_date} 起）")
-                hist_plot = diag["hist_full"][["Close"]].copy()
+
+                hist_plot = diag["hist_full"].copy()
                 hist_plot = hist_plot[hist_plot.index.date >= buy_date]
-                hist_plot["买入价"] = buy_price
+
                 if not hist_plot.empty:
-                    st.line_chart(hist_plot)
+                    # Fibonacci levels（基于持有期间最高最低价）
+                    hi  = hist_plot["High"].max()
+                    lo  = hist_plot["Low"].min()
+                    diff = hi - lo
+                    fib_levels = {
+                        "0%":     lo,
+                        "23.6%":  lo + 0.236 * diff,
+                        "38.2%":  lo + 0.382 * diff,
+                        "50.0%":  lo + 0.500 * diff,
+                        "61.8%":  lo + 0.618 * diff,
+                        "100%":   hi,
+                    }
+
+                    fig = go.Figure()
+
+                    # K线
+                    fig.add_trace(go.Candlestick(
+                        x=hist_plot.index,
+                        open=hist_plot["Open"],
+                        high=hist_plot["High"],
+                        low=hist_plot["Low"],
+                        close=hist_plot["Close"],
+                        name="价格",
+                        increasing_line_color="#26a69a",
+                        decreasing_line_color="#ef5350",
+                    ))
+
+                    # 买入价线
+                    fig.add_hline(y=buy_price, line_color="#2196F3", line_width=2,
+                                  line_dash="solid",
+                                  annotation_text=f"买入价 {buy_price:.2f}",
+                                  annotation_position="top left")
+
+                    # ATR止损/目标线
+                    if diag["atr"]:
+                        fig.add_hline(y=diag["atr"]["stop_loss"], line_color="#f44336",
+                                      line_width=1.5, line_dash="dash",
+                                      annotation_text=f"止损位 {diag['atr']['stop_loss']:.2f}",
+                                      annotation_position="bottom left")
+                        fig.add_hline(y=diag["atr"]["target"], line_color="#4caf50",
+                                      line_width=1.5, line_dash="dash",
+                                      annotation_text=f"目标价 {diag['atr']['target']:.2f}",
+                                      annotation_position="top left")
+
+                    # Fibonacci线
+                    fib_colors = {"0%":"#888","23.6%":"#aaa","38.2%":"#2196F3",
+                                  "50.0%":"#9c27b0","61.8%":"#2196F3","100%":"#888"}
+                    for label, level in fib_levels.items():
+                        fig.add_hline(y=level,
+                                      line_color=fib_colors[label],
+                                      line_width=1,
+                                      line_dash="dot",
+                                      annotation_text=f"Fib {label}  {level:.2f}",
+                                      annotation_position="right")
+
+                    # 锁定X轴range，只允许缩放不允许拖出
+                    x_min = str(hist_plot.index[0].date())
+                    x_max = str(hist_plot.index[-1].date())
+
+                    fig.update_layout(
+                        xaxis=dict(
+                            range=[x_min, x_max],
+                            fixedrange=False,       # 允许缩放
+                            rangeselector=dict(
+                                buttons=[
+                                    dict(count=1, label="1M", step="month", stepmode="backward"),
+                                    dict(count=3, label="3M", step="month", stepmode="backward"),
+                                    dict(step="all", label="全部")
+                                ]
+                            ),
+                            rangeslider=dict(visible=False),
+                            minallowed=x_min,       # 不能拖出左边界
+                            maxallowed=x_max,       # 不能拖出右边界
+                        ),
+                        yaxis=dict(fixedrange=False),
+                        height=500,
+                        plot_bgcolor="#1a1a2e",
+                        paper_bgcolor="#0f0f23",
+                        font_color="#ffffff",
+                        showlegend=True,
+                        legend=dict(orientation="h", y=-0.15),
+                        margin=dict(l=10, r=80, t=30, b=40),
+                        dragmode="zoom",
+                    )
+
+                    st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.info("无法获取买入日期后的价格数据")
 
