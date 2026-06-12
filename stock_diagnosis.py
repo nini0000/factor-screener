@@ -9,6 +9,8 @@ import pandas as pd
 import urllib.request
 import plotly.graph_objects as go
 import xml.etree.ElementTree as ET
+import anthropic
+import os
 from datetime import datetime, date, timedelta
 
 # ── 页面配置 ───────────────────────────────────────────────────────────────────
@@ -62,6 +64,39 @@ def get_news(ticker):
         return news
     except Exception:
         return []
+
+def ai_summarize_news(ticker, news_list, current_price, pnl_pct, is_profit):
+    """用Claude API总结新闻，解释涨跌原因，提供情绪价值"""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key or not news_list:
+        return None
+    try:
+        news_text = "\n".join([f"- {n['title']} ({n['date']})" for n in news_list])
+        status = f"盈利{pnl_pct:.1f}%" if is_profit else f"亏损{abs(pnl_pct):.1f}%"
+        prompt = f"""你是一个专业但友善的股票分析师，正在帮助一个普通散户理解他持有的股票。
+
+股票代码：{ticker}
+当前状态：{status}，当前价格 {current_price:.2f}
+
+最近相关新闻：
+{news_text}
+
+请用简单易懂的中文（不超过150字）：
+1. 总结最近这只股票涨跌的主要原因
+2. 判断是市场整体情绪还是公司自身问题
+3. 用一句话给投资者一个情绪上的安慰或提醒
+
+语气要像一个朋友在跟你解释，不要太正式，不要用太多专业术语。最后不要给出买卖建议。"""
+
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return message.content[0].text
+    except Exception as e:
+        return None
 
 def compute_diagnosis(hist_full, hist_1y, fast, fin, bs, buy_price, buy_date):
     result = {}
@@ -396,6 +431,24 @@ if diagnose_btn and ticker_input:
                         st.markdown(f"- [{item['title']}]({item['link']}) `{item['date']}`")
                 else:
                     st.info("暂时无法获取新闻，请手动搜索相关资讯")
+
+                # ── AI 涨跌原因分析 ───────────────────────────────────────────
+                st.divider()
+                st.subheader("🤖 AI 解读：今天为什么涨跌？")
+                st.caption("基于近期新闻，用简单语言解释涨跌背后的原因")
+
+                if os.environ.get("ANTHROPIC_API_KEY"):
+                    with st.spinner("AI正在分析中..."):
+                        ai_summary = ai_summarize_news(
+                            ticker_input, news,
+                            current, pnl, is_profit
+                        )
+                    if ai_summary:
+                        st.info(ai_summary)
+                    else:
+                        st.info("暂时无法生成AI分析，请稍后再试")
+                else:
+                    st.info("💡 设置 ANTHROPIC_API_KEY 环境变量即可开启AI解读功能")
 
                 st.divider()
                 st.caption("⚠️ 本工具仅供学习研究，不构成投资建议。投资有风险，决策需谨慎。")
