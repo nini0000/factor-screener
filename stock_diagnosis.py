@@ -105,7 +105,7 @@ def ai_summarize_news(ticker, news_list, current_price, pnl_pct, is_profit):
 
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-haiku-4-5",
             max_tokens=400,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -120,7 +120,7 @@ def ask_ai(prompt_text):
     try:
         client = anthropic.Anthropic(api_key=api_key)
         response = client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-haiku-4-5",
             max_tokens=1000,
             tools=[{"type": "web_search_20250305", "name": "web_search"}],
             messages=[{"role": "user", "content": prompt_text}]
