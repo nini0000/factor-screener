@@ -99,14 +99,14 @@ def ai_summarize_news(ticker, news_list, current_price, pnl_pct, is_profit):
 **是大环境还是公司自身？** [判断原因类型]
 
 ---
-💬 **朋友说一句：** [一句情绪安慰或提醒，语气像朋友]
+💬 **AI说一句：** [一句情绪安慰或提醒，语气像朋友]
 
 语气要像朋友在跟你解释，不要太正式。最后不要给出买卖建议。"""
 
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=300,
+            max_tokens=400,
             messages=[{"role": "user", "content": prompt}]
         )
         return message.content[0].text
@@ -121,7 +121,7 @@ def ask_ai(prompt_text):
         client = anthropic.Anthropic(api_key=api_key)
         response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=300,
+            max_tokens=1000,
             tools=[{"type": "web_search_20250305", "name": "web_search"}],
             messages=[{"role": "user", "content": prompt_text}]
         )
